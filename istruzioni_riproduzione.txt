@@ -1,0 +1,205 @@
+------- ISTRUZIONI PER LA RIPRODUCIBILITA' DEL PROGETTO
+
+
+Per poter riprodurre il progetto e' necessario, prima di lanciare i codici,
+disporre solamente dei seguenti files:
+
+- daily_file: estrazioni giornaliere con l'elenco degli id validi,
+  avranno nel nome la data del download, scaricabili come
+  indicato al seguente link:
+  https://developers.themoviedb.org/3/getting-started/daily-file-exports
+  NOTA: nel nome del file, la data va sostituita con "daily", come indicato
+  nell'albero presentato di seguito
+
+- tutti gli script: la loro posizione non deve necessariamente essere quella
+  indicata in seguito.
+
+- the_oscar_award.csv: sono dati relativi agli oscar, reperibili su Kaggle
+  al link:
+
+- award_types.xlsx: si tratta di un file creato manualmente che permette,
+  attraverso una transcodifica, di capire de un premio televisivo (Emmy o Golden
+  Globe) puo' essere vinto anche da un film o meno: se siamo nel primo caso,
+  in fase di enrichment vanno considerati anche i film.
+  TM indica che il premio puo' essere vinto anche da un film.
+
+NOTA: in tutti gli script, in testa al codice va modificato il
+percorso definito nella variabile path_data con "../root/data/".
+
+L'alberatura della cartella di lavoro deve essere la seguente:
+
+/root
+  /script
+    - award_enrichment_tvseries.ipynb
+    - award_enrichment_movies.ipynb
+    - award_enrichment_people.ipynb
+    - process_data.ipynb
+    /get_data
+      - get_tmdb_data.ipynb
+      - scrape_emmyData.ipynb
+      - scrape_gglobeData.ipynb
+      - awards_get_id_api.ipynb
+  /data
+    /tmdb
+      /daily_file
+       - person_ids_daily.json
+       - movie_ids_daily.json
+       - tv_series_ids_daily.json
+    /json
+      - tmdb_movies.json
+      - tmdb_movies_cast.json
+      - tmdb_movies_crew.json
+      - tmdb_people.json
+      - tmdb_tv_seasons.json
+      - tmdb_tvs.json
+      - tmdb_tvs_cast.json
+      - tmdb_tvs_crew.json
+    /custom
+      - movie_id_api.csv
+      - people_id_api.csv
+      - tv_series_id_api.csv
+      - award_types.xlsx
+    /awards
+      - emmy_data.dataset
+      - gglobe_data.dataset
+      - movies_awards.data
+      - the_oscar_award.csv
+      - tv_series_awards.data
+      /integrated
+        - award_movies_final.df
+        - award_people_final.df
+        - award_tv_series_final.df
+  /mongo
+	- write_db.ipynb
+	- rs_config0_srv.bat
+	- rs_shard1_srv.bat
+	- rs_shard1_srv.bat
+	- run_router.bat
+	/database
+		/cfg0
+			/data
+			/log
+		/cfg1
+			/data
+			/log
+		/db27017
+			/data
+			/log
+		/db27018
+			/data
+			/log
+		/db27019
+			/data
+			/log
+		/db27020
+			/data
+			/log
+		/db27021
+			/data
+			/log
+		/db27022
+			/data
+			/log
+		/router
+			/data
+			/log
+
+
+
+Per riprodurre il progetto, vanno eseguiti tutti gli script come indicato nel seguito
+
+
+##### ACQUISIZIONE #####
+
+- get_tmdb_data.ipynb: per il download completo dei dati di tmdb
+- scrape_emmyData.ipynb: scraping dei dati relativi agli emmy dal sito ufficiale
+- scrape_gglobeData.ipynb: scraping dei dati relativi agli emmy dal sito ufficiale
+
+- process_data.ipynb: script per esguire una pulizia preliminare dei premi
+  (e uniformare la struttura dei dati) e ripulire i dati di tmdb (solo i dati
+  relativi alle stagioni - tmdb_tv_seasons.json - presentavano problemi,
+  in particolare sulla data.
+  Si recupera inoltre per i dati di cast e crew l'id della persona da noi
+  generato poichè non e' stato possibile in fase di download. In particolare,
+  non e' stato possibile perche altrimenti sarebbe stato impossibile
+  eseguire il download su 3 macchine contemporaneamente (una per la sezione
+  film, una per la sezione TV Series e una per la sezione people dello script
+  get_tmdb_data.ipynb)
+
+
+##### ENRICHMENT #####
+
+- awards_get_id_api.ipynb: script che permette di interrogare le api di
+  tmdb per la ricerca dell'id associato nome della persona, serie TV o film
+  presente sui dataset dei premi: i file risultanti serviranno per l'enrichment
+
+- award_enrichment_tvseries.ipynb: script per l'arricchimento dei dati dei
+  programmi televisivi con quelli dei premi, ossia permette di identificare il
+  programma presente su tmdb che ha vinto il premio
+
+- award_enrichment_movies.ipynb: script per l'arricchimento dei dati dei
+  film con quelli dei premi, ossia permette di identificare il
+  film presente su tmdb che ha vinto il premio
+
+- award_enrichment_people.ipynb: script per l'arricchimento dei dati dei
+  delle persone con quelli dei premi, ossia permette di identificare la persona
+  presente su tmdb che ha vinto il premio
+
+
+##### MEMORIZZAZIONE E DISTRIBUZIONE #####
+
+- write_db.ipynb: script che scrive su un database chiamato 'tmdb' di mongo e costituito da
+  4 collezioni: awards, people, movies, tvseries
+
+L'architettura simula la distribuzione dei dati su più macchine: invece che puntare a macchine
+diverse, si punta a diverse porte della macchina su cui si sta lavorando (localhost).
+
+L'architettura è costituita da:
+- due config servers: porte 27023/27024
+- un router (mongos): porta 27025
+- due sharded clusters:
+	
+	s1	27017	27018	27019
+	s2	27020	27021	27022
+
+
+#SETUP:
+NOTA: vanno modificati adeguatamente i puntamenti nei batch windows indicati nel seguito
+- config server:
+  inizializzazione in replica set dei config srv: eseguire rs_config_srv.bat e dalla shell di mongo
+  eseguire i comandi seguenti (collegandosi sulla porta 27023 o 27024, in cui ci sono i cfg srv)
+
+> rs.initiate({_id:"cfg", members:[{_id:0, host: "127.0.0.1:27023"},{_id:1, host: "127.0.0.1:27024"}]})
+> rs.conf()
+> rs.status()
+
+- shards:
+  inizializzazione della replica set s1 (che sarà il primo sharded cluster): eseguire rs_shard1_srv.bat
+  lanciare mongo sulla porta 27017 (o 18/19) e lanciare il comando di inizializzazione della replica set:
+
+> rs.initiate({_id:"s1", members:[{_id:0, host: "127.0.0.1:27017"},{_id:1, host: "127.0.0.1:27018"},{_id:1, host: "127.0.0.1:27019"}]})
+> rs.conf()
+> rs.status()
+
+  la stessa cosa va fatta per il secondo sharded cluster, eseguendo rs_shard1_srv.bat e lanciando i seguenti comandi
+  dalla shell di mongo:
+
+> rs.initiate({_id:"s2", members:[{_id:0, host: "127.0.0.1:27020"},{_id:1, host: "127.0.0.1:27021"},{_id:1, host: "127.0.0.1:27022"}]})
+> rs.conf()
+> rs.status()
+
+- router: lanciare lo script che inizializza il router sulla porta 27025: run_router.bat
+  aprire la shell su quella porta, e poi lanciare il comando:
+
+> sh.addShard( "s1/127.0.0.1:27017,127.0.0.1:27018,127.0.0.1:27019")
+> sh.addShard( "s2/127.0.0.1:27020,127.0.0.1:27021,127.0.0.1:27022")
+> sh.enableSharding("tmdb")
+  
+  creare un indice:
+
+> db.movies.createIndex({movie_id:"hashed"})
+> db.movies.ensureIndex({id:"hashed"})
+> sh.shardCollection("tmdb.movies", { movie_id:"hashed" } )
+
+La stessa cosa va fatta per serie tv (collezione tvseries), persone (collezione people) e premi (collezione awards)
+con indice (sharded key) sull'id
